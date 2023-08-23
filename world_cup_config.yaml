@@ -91,7 +91,7 @@ roster_rename_columns:
   age_years: age
 competition_rename_columns:
   date: match_date
-  date_link:s match_date_link
+  date_links: match_date_link
   home: home_team
   away: away_team
   home_link: home_team_link
@@ -104,3 +104,74 @@ competition_dtypes:
   home_goals: 'Int64'
   away_goals: 'Int64'
   attendance: 'Int64'
+defense_rename_columns:
+  tackles_tkl: tackles_att
+  tackles_tklw: tackles_won
+  tackles_def_3rd: tackles_def_third
+  tackles_mid_3rd: tackles_mid_third
+  tackles_att_3rd: tackles_att_third
+  challenges_tkl: challenges_won
+  blocks_blocks: blocks
+  blocks_sh: shot_blocks
+  blocks_pass: pass_blocks
+  'int': interceptions
+  clr: clearances
+  err: errors_lead_to_shot
+passing_rename_columns:
+  total_cmp: passes_completed
+  total_att: passes_attempted
+  total_totdist: total_pass_distance
+  total_prgdist: total_progressive_pass_distance
+  short_cmp: short_passes_completed
+  short_att: short_passes_attempted
+  medium_cmp: medium_passes_completed
+  medium_att: medium_passes_attempted
+  long_cmp: long_passes_completed
+  long_att: long_passes_attempted
+  ast: assists
+  kp: key_passes
+  '1/3': passes_into_final_third
+  ppa: passes_into_penalty_area
+  crspa: crosses_into_penalty_area
+  prgp: progressive_passes
+possession_rename_columns:
+  touches_touches: touches
+  touches_def_pen: touches_def_penalty_area
+  touches_def_3rd: touches_def_third
+  touches_mid_3rd: touches_mid_third
+  touches_att_3rd: touches_att_third
+  touches_att_pen: touches_att_penalty_area
+  take-ons_tkld: take_ons_tackled
+  carries_totdist: total_carries_distance
+  carries_prgdist: total_progressive_carries_distance
+  carries_1/3: carries_into_final_third
+  carries_cpa: carries_into_penalty_area
+  carries_mis: carries_miscontrolled
+  carries_dis: carries_disposessed
+  receiving_rec: passes_recieved
+  receiving_prgr: progressive_passes_recieved
+misc_rename_columns:
+  performance_2crdy: second_yellow_cards
+  performance_fls: fouls
+  performance_crs: crosses
+  performance_int: interceptions
+  performance_recov: ball_recoveries
+passing_types_rename_columns:
+  att: passes_attempted
+  pass_types_live: passes_live
+  pass_types_dead: passes_dead_ball
+  pass_types_fk: passes_free_kick
+  pass_types_tb: passes_through_balls
+  pass_types_sw: passes_switches
+  pass_types_ti: passes_throw_ins
+  pass_types_ck: passes_corner_kicks
+  corner_kicks_in: corner_kicks_inswinging
+  corner_kicks_out: corner_kicks_outswinging
+  corner_kicks_str: corner_kicks_straight
+  outcomes_cmp: passes_completed
+  outcomes_off: passes_offside
+  outcomes_blocks: passes_blocked
+shot_creation_rename_columns:
+  player: shot_player
+  player_link: shot_player_link
+  'body part': body_part
