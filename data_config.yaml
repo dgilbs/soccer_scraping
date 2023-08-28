@@ -5,6 +5,7 @@ advanced_match_report_categories:
 - possession
 - defense
 - misc
+- keeper
 advanced_team_stat_categories:
 - standard
 - shooting
@@ -708,24 +709,26 @@ team_stats_standard_rename_columns:
   xgd/90: xg_diff_per_match
 match_report_keeper_rename_columns:
   min: minutes
-  sota: shots_on_target_against
-  ga: goals_allowed
-  save%: save_pct
-  cmp: passes_launched_completed
-  att: passes_launched_attempted
-  cmp%: passes_launched_pct
-  att.1: passes_attempted
-  thr: throws_attempted
-  launch%: pct_of_passes_launched
-  avglen: average_pass_length
-  att.2: goal_kicks_attempted
-  launch%.1: pct_goal_kicks_launched
-  avglen.1: avg_goal_kick_length
-  opp: crosses_faced
-  stp: crosses_stopped
+  shot_stopping_sota: shots_on_target_against
+  shot_stopping_ga: goals_allowed
+  shot_stopping_saves: saves
+  shot_stopping_save%: save_pct
+  shot_stopping_psxg: psxg
+  launched_cmp: passes_launched_completed
+  launched_att: passes_launched_attempted
+  launched_cmp%: launched_pass_completion_pct
+  passes_att: passes_attempted
+  passes_thr: throws_attempted
+  passes_launch%: pct_of_passes_launched
+  passes_avglen: average_pass_length
+  goal_kicks_att: goal_kicks_attempted
+  goal_kicks_launch%: pct_goal_kicks_launched
+  goal_kicks_avglen: avg_goal_kick_length
+  crosses_opp: crosses_faced
+  crosses_stp: crosses_stopped
   stp%: crosses_stopped_pct
-  '#opa': defensive_actions_outside_pen_area
-  avgdist: avg_distance_of_defensive_actions
+  'sweeper_#opa': defensive_actions_outside_pen_area
+  sweeper_avgdist: avg_distance_of_defensive_actions
 match_report_keeper_dtypes:
   saves: Int64
   save_pct: float
@@ -746,6 +749,7 @@ match_report_keeper_dtypes:
   defensive_actions_outside_pen_area: Int64
   avg_distance_of_defensive_actions: float
   goals_allowed: Int64
+  minutes: Int64
 match_report_upsert_config:
   schema: soccer
   table: player_match_{}_stats

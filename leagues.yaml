@@ -38,7 +38,7 @@ Serie_A_Women:
   multi_year: True
   folder: serie_a_women
   gender: Women
-Premier_League:
+Premier-League:
   league_id: 9
   league_table_tag: Premier-League-Stats
   name: Premier League
@@ -61,4 +61,12 @@ A-League-Women:
   schedule_tag: A-League-Women-Scores-and-Fixtures
   multi_year: True
   folder: a_league_women
+  gender: Women
+Womens-World-Cup:
+  league_id: 106
+  league_table_tag: Womens-World-Cup-Stats
+  name: World Cup
+  schedule_tag: Womens-World-Cup-Scores-and-Fixtures
+  multi_year: False
+  folder: womens_world_cup
   gender: Women

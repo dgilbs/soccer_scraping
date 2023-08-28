@@ -15,11 +15,32 @@ from itertools import product
 
 
 def generate_unique_id(values):
+    """
+    generates an id based on certain values
+
+    Args:
+        values(list): list of the values to input into the id
+
+    Returns:
+        unique_id(str): returns hashed string id for the values
+
+    """
     hash_object = hashlib.md5(','.join(map(str, values)).encode())
     unique_id = hash_object.hexdigest()
     return unique_id
 
 def upsert_data_into_db(df, schema, table_name, primary_key_column='id'):
+    """
+    Will insert new data into a database and update where the id is already present
+
+    Args:
+        df(DataFrame): data being inserted
+        schema(str): database schema
+        table_name(str): database table
+        primary_key_colum(str): name of table's primary key
+
+    """
+    #connect to DB
     db_password = os.environ.get("DATABASE_PASSWORD", creds.db_password)
     db_config = {
     'host': 'localhost',
@@ -29,7 +50,6 @@ def upsert_data_into_db(df, schema, table_name, primary_key_column='id'):
     'port': '5432'
     }
 
-    # Establish a connection to the database
     connection = psycopg2.connect(
         host=db_config['host'],
         database=db_config['database'],
@@ -37,16 +57,20 @@ def upsert_data_into_db(df, schema, table_name, primary_key_column='id'):
         password=db_config['password'],
         port=db_config['port']
     )
-
+    #create cursor
     cursor = connection.cursor()
+    #create substring for query
     columns = ', '.join(df.columns)
     placeholders = ', '.join(['%s'] * len(df.columns))
+    #write out upsert query
     upsert_query = f"""
     INSERT INTO {schema}.{table_name} ({columns})
     VALUES ({placeholders})
     ON CONFLICT ({primary_key_column}) DO UPDATE
     SET {', '.join([f"{col} = EXCLUDED.{col}" for col in df.columns if col != primary_key_column])};
     """
+
+    #create values tuple
     data_values = [tuple(row) for _, row in df.iterrows()]
 
     # Execute the upsert query
@@ -56,7 +80,17 @@ def upsert_data_into_db(df, schema, table_name, primary_key_column='id'):
     connection.commit()
 
 def get_table_columns(schema_name, table_name):
+    """
+    returns the columns of a given table
 
+    Args:
+        schema(str): database schema
+        table_name(str): database table
+    returns:
+        column_names(list): list of columns in the table
+
+    """
+    #connect to DB
     db_password = os.environ.get("DATABASE_PASSWORD", creds.db_password)
     db_config = {
     'host': 'localhost',
@@ -66,7 +100,6 @@ def get_table_columns(schema_name, table_name):
     'port': '5432'
     }
 
-    # Establish a connection to the database
     connection = psycopg2.connect(
         host=db_config['host'],
         database=db_config['database'],
@@ -80,7 +113,7 @@ def get_table_columns(schema_name, table_name):
         cursor = connection.cursor()
 
 
-        # Get column names using the information schema
+        # extract column names from information schema
         query = """
             SELECT column_name
             FROM information_schema.columns
@@ -99,6 +132,15 @@ def get_table_columns(schema_name, table_name):
         connection.close()
 
 def db_connect():
+    """
+    creates a connection to the database for ad hoc queries and purposes
+
+    Args:
+        None
+    returns
+        Connection (psycopg2.connect): connection to database
+
+    """
     db_password = os.environ.get("DATABASE_PASSWORD", creds.db_password)
     db_config = {
     'host': 'localhost',
@@ -108,7 +150,6 @@ def db_connect():
     'port': '5432'
     }
 
-    # Establish a connection to the database
     connection = psycopg2.connect(
         host=db_config['host'],
         database=db_config['database'],
@@ -118,42 +159,76 @@ def db_connect():
     )
     return connection
 
-def upsert_multiple_files_to_db(file_path, schema, table, primary_key_column, key_term=None):
+def upsert_multiple_files_to_db(file_path, schema, table, primary_key_column='id', key_term=None):
+    """
+    Compiles multiple files and inserts them all into the database
+
+    Args:
+        file_path(str): path of collective files
+        schema(str): database schema
+        table(str): database table
+        primary_key_column(str): table's primary key column
+        key_term(str): key term present in file names to be inserted
+    """
+    #make a list of all files
     files = all_files_in_subdirectories(file_path, key_term=key_term)
+    #concat all files
     df = pd.concat([pd.read_pickle(i) for i in files], ignore_index=True)
+    #get the table columns and apply that to the dataframe
     table_cols = get_table_columns(schema, table)
     df = df[table_cols]
+    #replace blank cells and upsert
     df = df.replace('', 0)
     upsert_data_into_db(df, schema, table, primary_key_column)
 
 def retrieve_table(schema_name, table_name, limit=None):
+    """
+    Retrieves a table from the database
+
+    Args:
+        schema_name(str): database schema
+        table_name(str): database table
+        limit(int): limit on rows, if needed
+
+
+    """
+    #get column names
     cols = get_table_columns(schema_name, table_name)
+    run query
     query = 'select * from {}.{}'.format(schema_name, table_name)
+    #if a limit is requested then apply that
     if limit:
         query += ' limit {};'.format(limit)
     else:
         query += ';'
+    #connect to db
     conn = db_connect()
     cursor = conn.cursor()
     cursor.execute(query)
+    #create dataframe
     df = pd.DataFrame(cursor.fetchall(), columns=cols)
     conn.close()
     return df
 
-def generate_id(row, columns):
+def cast_dtypes(df, datatypes):
     """
-        generates ID for a given row
+    Casts datatypes to columns in a database
 
-        Args:
-            row(pd.Series): row from dataframe
+    Args:
+        df(DataFrame): DataFrame to assign dtypes to
+        dtypes(dict): dict of columns and their corresponding datatypes
 
-        Returns:
-            id(hash_object): unique id generated for that row
-
+    Returns:
+        new_df(DataFrame): dataframe with reset datatypes
     """
-    hash_object = hashlib.md5()
-    hash_object.update(str(row[columns]).encode('utf-8'))
-    return hash_object.hexdigest()
+    new_df = df.copy()
+    arr = list(datatypes.keys())
+    for i in arr:
+        if i in df.columns:
+            new_df[i] = new_df[i].fillna(np.nan)
+            new_df[i] = new_df[i].replace('', np.nan)
+            new_df[i] = new_df[i].astype(datatypes[i])
+    return new_df
 
 
 def all_files_in_subdirectories(dir_path, key_term=None):
@@ -166,17 +241,32 @@ def all_files_in_subdirectories(dir_path, key_term=None):
     returns:
         arr(list): list of all full relative paths in that folder
     """
+    #initalize a list
     arr = list()
+    #walk through entire file path and append full relative path of each
     for root, dirs, files in os.walk(dir_path):
         for file in files:
             arr.append(os.path.join(root, file))
+    #filters for a key term
     if key_term:
         arr = [i for i in arr if key_term in i]
     return arr
 
 
 def build_dataframe_from_subdirectory(dir_path, key_term=None):
+    """
+    Takes files in a given file path and builds a dataframe
+
+    Args:
+        dir_path(str): relative path to folder
+        key_term(str): any key terms in file names
+
+    Returns:
+        df(DataFrame): data in folder
+    """
+    #gets all the files
     files = all_files_in_subdirectories(dir_path, key_term=key_term)
+    #concats taht list into a dataframe
     df = pd.concat([pd.read_pickle(i) for i in files], ignore_index=True)
     return df
 
@@ -190,6 +280,7 @@ def extract_squad_tag(url):
         Returns:
             tag(str): the web tag
     """
+    #returns the tag for a team's page
     try:
         last_elem = url.split('/')[-1]
         return last_elem.split('-Stats')[0]
@@ -206,13 +297,16 @@ def scrape_standings(info_dict, season, current_season=True):
         Returns:
             final(df) df of total standings across all groups
     """
+    #grab the competition id and tag from info
     competition_id = info_dict['league_id']
     league_table = info_dict['league_table_tag']
+    #checks if a single year needs to be expanded to a multi-year league
     if not info_dict['multi_year']:
         season_str = season
     else:
         prev = int(season) - 1
         season_str = '{}-{}'.format(prev, season)
+    #build out url and table id and read into DataFrame and do initial cleaning
     url = 'https://fbref.com/en/comps/{}/{}/{}-NWSL-Stats'.format(competition_id, season_str, season_str, league_table)
     attrs = {'id': 'results{}{}1_overall'.format(season_str, competition_id)}
     df = pd.read_html(url, attrs=attrs, extract_links='body')[0]
@@ -231,7 +325,9 @@ def scrape_standings(info_dict, season, current_season=True):
     df['league'] = info_dict['name']
 
     df['season'] = season_str
+    #saves it to proper directory
     dir_path = 'data/{}/league_standings'.format(info_dict['folder'])
+    #creates folder for this if it does not exist.
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
     file_path ='{}_standings.pkl'.format(str(season))
@@ -240,8 +336,18 @@ def scrape_standings(info_dict, season, current_season=True):
     df.to_pickle(full_path)
     return df
 
-def scrape_schedule_from_competition(info_dict, season, config, current_year=True):
-    #https://fbref.com/en/comps/182/2022/schedule/2022-NWSL-Scores-and-Fixtures
+def scrape_schedule_from_competition(info_dict, season, config):
+    """
+    Scrapes a competition's schedule page
+    Example: https://fbref.com/en/comps/182/schedule/NWSL-Scores-and-Fixtures
+
+    Args:
+        info_dict(dict): league information
+        season(str): season
+        config(dict): config file
+
+    """
+    #get info/tag/year info
     competition_id = info_dict['league_id']
     schedule_tag = info_dict['schedule_tag']
     if not info_dict['multi_year']:
@@ -250,11 +356,8 @@ def scrape_schedule_from_competition(info_dict, season, config, current_year=Tru
         prev = int(season) - 1
         season_str = '{}-{}'.format(prev, season)
     url = 'https://fbref.com/en/comps/{}/{}/schedule/{}-{}'.format(competition_id, season_str, season_str, schedule_tag)
-#     if not current_year:
-#         attrs = {'id': 'sched_all'}
-#     else:
-#         attrs = {'id': 'sched_{}_{}_1'.format(season_str, competition_id)}
 
+    #try to extract the table with the schedule in it
     try:
         attrs = {'id': 'sched_all'}
         df = pd.read_html(url, attrs=attrs, extract_links='body')[0]
@@ -264,6 +367,7 @@ def scrape_schedule_from_competition(info_dict, season, config, current_year=Tru
     except Exception as e:
         print(e)
         return False
+    #some basic cleaning--column renames and also extracting links provided by fbref
     df.columns = [i.lower().replace(' ', '_') for i in df.columns]
     df = df.rename(columns=config['schedule_rename_columns'])
     link_cols = config['schedule_link_columns']
@@ -275,6 +379,7 @@ def scrape_schedule_from_competition(info_dict, season, config, current_year=Tru
     for j in non_link_cols:
         df[j] = df.apply(lambda row: row[j][0], axis=1)
 
+    #create new columns based on other values and info values
     df = df[(df.day_of_week != 'Day') & (df.match_report == 'Match Report') & (df.score.str.contains('–'))]
     df['attendance'] = df.attendance.str.replace(',', '')
     df['home_team_id'] = df.apply(lambda row: row['home_team_link'].split('/')[3], axis=1)
@@ -288,6 +393,7 @@ def scrape_schedule_from_competition(info_dict, season, config, current_year=Tru
     if not os.path.exists(dir_path):
         os.makedirs(dir_path)
 
+    #save to file path and upsert
     file_name = '{}_schedule.pkl'.format(season)
     full_path = os.path.join(dir_path, file_name)
     df = df.reset_index(drop=True)
@@ -303,7 +409,7 @@ def scrape_schedule_from_competition(info_dict, season, config, current_year=Tru
 
 def scrape_match_report_from_competition_schedule(row, info_dict, category, config, fact_tables=False):
     """
-        scrapes a full match report (both teams) from the competition schedule
+        scrapes a match report (both teams) from the competition schedule for a given category
 
         Args:
             row(pd.series): row of the schedule dataframe
@@ -314,17 +420,28 @@ def scrape_match_report_from_competition_schedule(row, info_dict, category, conf
             final(DataFrame): full match report
 
     """
+    #clean the link and make sure it works
     if 'fbref' in row['match_report_link']:
         url = row['match_report_link']
     else:
         url = 'https://fbref.com' + row['match_report_link']
-    home_table_id = 'stats_{}_{}'.format( row['home_team_id'], category.lower())
+
+    #creates table id
+    if category == 'keeper':
+        home_table_id = 'keeper_stats_{}'.format( row['home_team_id'])
+        away_table_id = 'keeper_stats_{}'.format( row['away_team_id'])
+    else:
+        home_table_id = 'stats_{}_{}'.format( row['home_team_id'], category.lower())
+        away_table_id = 'stats_{}_{}'.format( row['away_team_id'], category.lower())
+
+    #reads in data for the home team, cleans up column names and links, adds new values
     home_df = pd.read_html(url, attrs={'id': home_table_id}, extract_links='body')[0]
     home_df.columns = [i[0].lower().replace(' ', '_') + '_'+ i[1].lower().replace(' ', '_') if 'Unnamed' not in i[0] else i[1].lower().replace(' ', '_') for i in home_df.columns ]
     home_df['player_link'] = home_df.apply(lambda row: row['player'][1], axis=1)
     home_df['player'] = home_df.apply(lambda row: row['player'][0], axis=1)
     cols = [i for i in home_df.columns if i not in ['player', 'player_link']]
-    home_df = home_df[pd.notnull(home_df['#'])]
+    if category != 'keeper':
+        home_df = home_df[pd.notnull(home_df['#'])]
     for i in cols:
         home_df[i] = home_df.apply(lambda row: row[i][0], axis=1)
     home_df['match_id'] = row['id']
@@ -333,13 +450,14 @@ def scrape_match_report_from_competition_schedule(row, info_dict, category, conf
     home_df['opponent'] = row['away_team']
     home_df['opponent_id'] = row['away_team_id']
 
-    away_table_id = 'stats_{}_{}'.format( row['away_team_id'], category.lower())
+    #reads in data for the away team, cleans up column names and links, adds new values
     away_df = pd.read_html(url, attrs={'id': away_table_id}, extract_links='body')[0]
     away_df.columns = [i[0].lower().replace(' ', '_') + '_'+ i[1].lower().replace(' ', '_') if 'Unnamed' not in i[0] else i[1].lower().replace(' ', '_') for i in away_df.columns ]
     away_df['player_link'] = away_df.apply(lambda row: row['player'][1], axis=1)
     away_df['player'] = away_df.apply(lambda row: row['player'][0], axis=1)
     cols = [i for i in away_df.columns if i not in ['player', 'player_link']]
-    away_df = away_df[pd.notnull(away_df['#'])]
+    if category != 'keeper':
+        away_df = away_df[pd.notnull(away_df['#'])]
     for i in cols:
         away_df[i] = away_df.apply(lambda row: row[i][0], axis=1)
     away_df['match_id'] = row['id']
@@ -348,6 +466,7 @@ def scrape_match_report_from_competition_schedule(row, info_dict, category, conf
     away_df['opponent'] = row['home_team']
     away_df['opponent_id'] = row['home_team_id']
 
+    #creates directory to save the file in and also concats the two DFs and renames the columns
     file_dir = 'data/{}/match_reports/{}'.format(info_dict['folder'], category)
     if not os.path.exists(file_dir):
         os.makedirs(file_dir)
@@ -359,6 +478,8 @@ def scrape_match_report_from_competition_schedule(row, info_dict, category, conf
     final['id'] = final.apply(lambda row: generate_unique_id([row['player'], row['match_id']]), axis=1)
     final['gender'] = info_dict['gender']
     final.to_pickle(full_path)
+
+    #condenses dataframe to only the table columns, checks for missing columns, and upserts it
     schema = config['match_report_upsert_config']['schema']
     table = config['match_report_upsert_config']['table'].format(category.lower().replace(' ', '_'))
     table_cols = get_table_columns(schema, table)
@@ -367,20 +488,39 @@ def scrape_match_report_from_competition_schedule(row, info_dict, category, conf
         final[col] = None
     final = final.replace('', None)
     insert_df = final[table_cols]
+    #updates fact tables if requested
     if fact_tables:
         update_fact_tables(final, config, info_dict)
     upsert_data_into_db(insert_df, schema, table)
 
 def scrape_match_report_all_categories(row, info_dict, config, advanced=True):
+    """
+    Scrapes a match report in all categories and uploads the data
+
+    Args:
+        row(pd.Series): row in a schedule DataFrame
+        info_dict(dict): league info
+        config: config file
+        advanced(bool): signals whether advanced metrics are available for that match
+
+    returns:
+        None
+
+    """
+    #pulls list of metrics based on whether or not the game is advanced
     if advanced:
         categories = config['advanced_match_report_categories']
     else:
         categories = config['basic_match_report_categories']
+
+    #start with the summary and update the fact tables
     try:
         scrape_match_report_from_competition_schedule(row, info_dict, categories[0], config, fact_tables=True)
     except Exception as e:
         print(e, 'summary')
+    #use time.sleep to prevent hitting the rate limit
     time.sleep(6)
+    #iterate through categories and scrape the match reports for those
     for cat in categories[1:]:
         try:
             scrape_match_report_from_competition_schedule(row, info_dict, cat, config)
@@ -388,10 +528,12 @@ def scrape_match_report_all_categories(row, info_dict, config, advanced=True):
             print(e, cat)
         time.sleep(6)
 
+    #scrape shot data
     try:
         scrape_shot_creation_match_data(row, info_dict)
     except Exception as e:
         print(e, 'shot data')
+
 
 def update_fact_tables(df, config, info_dict):
     upsert_info = config['fact_table_upsert_config']
@@ -406,7 +548,42 @@ def update_fact_tables(df, config, info_dict):
         upsert_data_into_db(deduped_df, schema, table)
 
 
+def update_fact_tables(df, config, info_dict):
+    """
+    Updates the fact tables in the Database based on a match report
+
+    Args:
+        df(DataFrame): Match Report
+        config(dict): config file, used here to signal what columns are meant for which tables
+        info_dict(dict): league info
+    """
+    #get info from config fil;e
+    upsert_info = config['fact_table_upsert_config']
+    tables = list (upsert_info.keys())
+    #go through dataframe and make sure the proper fact tables are updated
+    for i in tables:
+        temp = df.copy()
+        schema = upsert_info[i]['table_schema']
+        table = upsert_info[i]['table_name']
+        df_cols = upsert_info[i]['match_report_columns']
+        deduped_df = temp.drop_duplicates(subset=df_cols)[df_cols]
+        deduped_df.columns = get_table_columns(schema, table)
+        upsert_data_into_db(deduped_df, schema, table)
+
+
+
 def scrape_shot_creation_match_data(row, info):
+    """
+    Scrapes the shot data for a given match
+
+    Args:
+        row(pd.Series): DataFrame row from a schedule df
+        info(dict): league info
+
+    Returns:
+        df(DataFrame): DataFrame with shot data
+
+    """
     if 'fbref' in row['match_report_link']:
         url = row['match_report_link']
     else:
@@ -437,6 +614,16 @@ def scrape_shot_creation_match_data(row, info):
     return df
 
 def clean_shot_creation_df(df, config):
+    """
+    cleans a shot creation DataFrame
+
+    args:
+        df(DataFrame): Shot data DataFrame
+        config(dict): config file
+
+    returns:
+        df(DataFrame): cleaned DataFrame
+    """
     df = df[df.minute != '']
 
     df['stoppage_minute'] = df.apply(lambda row: row['minute'].split('+')[1] if len(row['minute'].split('+')) > 1 else None, axis=1)
@@ -462,7 +649,7 @@ def clean_shot_creation_df(df, config):
         new_col = i.replace('player', 'player_match_id')
         df[new_col] = df.apply(lambda row: generate_unique_id([row['player'], row['match_id']]), axis=1)
         df = df.rename(columns={'player': i})
-    df['shot_id'] = df.apply(lambda row: generate_id(row, ['index', 'shot_player_id', 'match_id']), axis=1)
+    df['shot_id'] = df.apply(lambda row: generate_unique_id([row['index'], row['shot_player_id'], row['match_id']]), axis=1)
 #     df['shot_player_match_id'] = df.apply(lambda row: generate_id(row, ['shot_player', 'match_id']), axis=1)
 #     df['sca_1_player_match_id'] = df.apply(lambda row: generate_id(row, ['sca_1_player', 'match_id']), axis=1)
 #     df['sca_2_player_match_id'] = df.apply(lambda row: generate_id(row, ['sca_2_player', 'match_id']), axis=1)
@@ -471,6 +658,15 @@ def clean_shot_creation_df(df, config):
     return df
 
 def extract_shot_creation_data_from_df(df):
+    """
+    Makes a seperate DataFrame of shot creating actions from shot data
+
+    Args:
+        df(DataFrame): cleaned shot creation DataFrame
+
+    Returns:
+        sca(DataFrame): dataframe of shot creating actions
+    """
     rows = list()
     for i in df.iterrows():
         row = i[1]
@@ -519,3 +715,45 @@ def extract_shot_creation_data_from_df(df):
 
     sca = pd.concat([sca, dummies], axis=1)
     return sca
+
+def update_fact_tables(df, config, info_dict):
+    """
+    Updates the fact tables in the Database based on a match report
+
+    Args:
+        df(DataFrame): Match Report
+        config(dict): config file, used here to signal what columns are meant for which tables
+        info_dict(dict): league info
+    """
+    #get info from config fil;e
+    upsert_info = config['fact_table_upsert_config']
+    tables = list (upsert_info.keys())
+    #go through dataframe and make sure the proper fact tables are updated
+    for i in tables:
+        temp = df.copy()
+        schema = upsert_info[i]['table_schema']
+        table = upsert_info[i]['table_name']
+        df_cols = upsert_info[i]['match_report_columns']
+        deduped_df = temp.drop_duplicates(subset=df_cols)[df_cols]
+        deduped_df.columns = get_table_columns(schema, table)
+        upsert_data_into_db(deduped_df, schema, table)
+
+def scrape_multiple_match_reports_from_schedule(df, info_dict, config, advanced=True):
+    """
+    Scrapes mutliple match reports from a schedule DataFrame
+
+    df(DataFrame): DataFrame of schedule info
+    info_dict(dict): league info
+    config(dict): config file
+
+    Returns:
+        None
+
+    """
+    print('scraping {} rows'.format(len(df)))
+    for i in df.iterrows():
+        row = i[1]
+        print(i[0], row['match_report_link'])
+        scrape_match_report_all_categories(row, info_dict, config)
+
+    print('done!')
