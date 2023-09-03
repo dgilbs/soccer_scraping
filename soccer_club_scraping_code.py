@@ -851,3 +851,27 @@ def update_current_league_data(info_dict, config, start_date=None, end_date=None
     scrape_matches = league_schedule[mask].reset_index(drop=True)
 
     scrape_multiple_match_reports_from_schedule(scrape_matches, info_dict, config)
+
+
+def run_update_function():
+    """
+    runs a function in my database that updates staging tables that views depend on
+    (this should be abstracted at some point)
+
+    Args:
+        None
+
+    Returns:
+        None
+    """
+    conn = db_connect()
+
+    cursor = conn.cursor()
+
+    function_name = "soccer.full_staging_updates"
+
+    cursor.callproc(function_name)
+
+    conn.commit()
+
+    conn.close()
