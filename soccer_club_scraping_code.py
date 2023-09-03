@@ -194,7 +194,7 @@ def retrieve_table(schema_name, table_name, limit=None):
     """
     #get column names
     cols = get_table_columns(schema_name, table_name)
-    run query
+    #run query
     query = 'select * from {}.{}'.format(schema_name, table_name)
     #if a limit is requested then apply that
     if limit:
@@ -227,9 +227,11 @@ def cast_dtypes(df, datatypes):
         if i in df.columns:
             new_df[i] = new_df[i].fillna(np.nan)
             new_df[i] = new_df[i].replace('', np.nan)
+#             if df[i].dtype == 'object':
+#                 print(i)
+#                 new_df[i] = new_df[i].str.replace(',', '')
             new_df[i] = new_df[i].astype(datatypes[i])
     return new_df
-
 
 def all_files_in_subdirectories(dir_path, key_term=None):
     """
@@ -303,21 +305,24 @@ def scrape_standings(info_dict, season, current_season=True):
     #checks if a single year needs to be expanded to a multi-year league
     if not info_dict['multi_year']:
         season_str = season
+    elif info_dict['multi_year'] and current_season and date.today().month < 8:
+        prev = int(season) - 1
+        season_str = '{}-{}'.format(prev, season)
+    elif info_dict['multi_year'] and current_season and date.today().month > 8:
+        next_year = int(season) + 1
+        season_str = '{}-{}'.format(season, next_year)
     else:
         prev = int(season) - 1
         season_str = '{}-{}'.format(prev, season)
     #build out url and table id and read into DataFrame and do initial cleaning
-    url = 'https://fbref.com/en/comps/{}/{}/{}-NWSL-Stats'.format(competition_id, season_str, season_str, league_table)
+    url = 'https://fbref.com/en/comps/{}/{}/{}-{}'.format(competition_id, season_str, season_str, league_table)
     attrs = {'id': 'results{}{}1_overall'.format(season_str, competition_id)}
     df = pd.read_html(url, attrs=attrs, extract_links='body')[0]
     df.columns = [i.lower().replace(' ', '_') for i in df.columns]
     df['squad_link'] = df.apply(lambda row: row['squad'][1], axis=1)
     df['squad'] = df.apply(lambda row: row['squad'][0], axis=1)
     df['squad_tag'] = df.apply(lambda row: extract_squad_tag(row['squad_link']), axis=1)
-    if current_season:
-        df['squad_id'] = df.apply(lambda row: row['squad_link'].split('/')[-2], axis=1)
-    else:
-        df['squad_id'] = df.apply(lambda row: row['squad_link'].split('/')[-3], axis=1)
+    df['squad_id'] = df.apply(lambda row: row['squad_link'].split('/')[3], axis=1)
     df['squad'] = df.apply(lambda row: row['squad'].strip(), axis=1)
     remaining_cols = [i for i in df.columns if 'squad' not in i]
     for col in remaining_cols:
@@ -352,6 +357,12 @@ def scrape_schedule_from_competition(info_dict, season, config):
     schedule_tag = info_dict['schedule_tag']
     if not info_dict['multi_year']:
         season_str = season
+    elif info_dict['multi_year'] and current_season and date.today().month < 8:
+        prev = int(season) - 1
+        season_str = '{}-{}'.format(prev, season)
+    elif info_dict['multi_year'] and current_season and date.today().month > 8:
+        next_year = int(season) + 1
+        season_str = '{}-{}'.format(season, next_year)
     else:
         prev = int(season) - 1
         season_str = '{}-{}'.format(prev, season)
@@ -536,19 +547,6 @@ def scrape_match_report_all_categories(row, info_dict, config, advanced=True):
 
 
 def update_fact_tables(df, config, info_dict):
-    upsert_info = config['fact_table_upsert_config']
-    tables = list (upsert_info.keys())
-    for i in tables:
-        temp = df.copy()
-        schema = upsert_info[i]['table_schema']
-        table = upsert_info[i]['table_name']
-        df_cols = upsert_info[i]['match_report_columns']
-        deduped_df = temp.drop_duplicates(subset=df_cols)[df_cols]
-        deduped_df.columns = get_table_columns(schema, table)
-        upsert_data_into_db(deduped_df, schema, table)
-
-
-def update_fact_tables(df, config, info_dict):
     """
     Updates the fact tables in the Database based on a match report
 
@@ -716,28 +714,6 @@ def extract_shot_creation_data_from_df(df):
     sca = pd.concat([sca, dummies], axis=1)
     return sca
 
-def update_fact_tables(df, config, info_dict):
-    """
-    Updates the fact tables in the Database based on a match report
-
-    Args:
-        df(DataFrame): Match Report
-        config(dict): config file, used here to signal what columns are meant for which tables
-        info_dict(dict): league info
-    """
-    #get info from config fil;e
-    upsert_info = config['fact_table_upsert_config']
-    tables = list (upsert_info.keys())
-    #go through dataframe and make sure the proper fact tables are updated
-    for i in tables:
-        temp = df.copy()
-        schema = upsert_info[i]['table_schema']
-        table = upsert_info[i]['table_name']
-        df_cols = upsert_info[i]['match_report_columns']
-        deduped_df = temp.drop_duplicates(subset=df_cols)[df_cols]
-        deduped_df.columns = get_table_columns(schema, table)
-        upsert_data_into_db(deduped_df, schema, table)
-
 def scrape_multiple_match_reports_from_schedule(df, info_dict, config, advanced=True):
     """
     Scrapes mutliple match reports from a schedule DataFrame
@@ -757,3 +733,121 @@ def scrape_multiple_match_reports_from_schedule(df, info_dict, config, advanced=
         scrape_match_report_all_categories(row, info_dict, config)
 
     print('done!')
+
+
+def classify_xg_difference(xg_for, xg_against):
+    """
+    classifies a level of domninance for a team's performance in a match based on xg
+
+    Args:
+        xg_for(str/float): the team's xg for that match
+        xg_against(str/float): the opponent's xg
+
+    returns:
+        diff(str): string representing the category of difference betrween the numbers
+    """
+    try:
+        xg_for = float(xg_for)
+        xg_against = float(xg_against)
+        if xg_for - xg_against <= -.5:
+            diff = 'Against'
+        elif xg_for - xg_against >= .5:
+            diff = 'For'
+        else:
+            diff = 'Neutral'
+        return diff
+    except:
+        return None
+
+def scrape_team_season_results(row, config, info):
+    """
+    scrape a schedule from a team page on fbref.com
+
+    Args:
+        row(pd.Series): row of standings dataframe that has squad info
+        config(dict): config file
+        info(dict): league info
+
+    Returns:
+        df(DataFrame): dataframe of a team's schedule (completed matches only) for a given season
+    """
+    squad_id = row['squad_id']
+    tag = row['squad_tag']
+    season = row['season']
+    squad = row['squad']
+
+    url = 'https://fbref.com/en/squads/{}/{}/matchlogs/all_comps/schedule/{}-Scores-and-Fixtures-All-Competitions'.format(squad_id, season, tag)
+    df = pd.read_html(url, extract_links='body')[0]
+
+    df.columns = [i.lower().replace(' ', '_') for i in df.columns]
+    link_cols = ['comp', 'opponent', 'match_report', 'captain']
+    keep_cols = [i for i in df.columns if i not in link_cols]
+
+    for i in link_cols:
+        new_col = i + '_link'
+        df[new_col] = df.apply(lambda row: row[i][1], axis=1)
+        df[i] = df.apply(lambda row: row[i][0], axis=1)
+
+    for j in keep_cols:
+        df[j] = df.apply(lambda row: row[j][0], axis=1)
+
+    df = df[df.match_report == 'Match Report']
+    df['competition_id'] = df.apply(lambda row: row['comp_link'].split('/')[3], axis=1)
+    df['opponent_id'] = df.apply(lambda row: row['opponent_link'].split('/')[3], axis=1)
+    df['match_id'] = df.apply(lambda row: row['match_report_link'].split('/')[3], axis=1)
+    df['captain_id'] = df.apply(lambda row: row['captain_link'].split('/')[3] if row['captain_link'] is not None else None, axis=1)
+    df.insert(0, 'squad_id', squad_id)
+    df.insert(0, 'squad', squad)
+    df['id'] = df.apply(lambda row: generate_unique_id([row['date'], row['squad_id'], row['match_id']]), axis=1)
+    df = df.rename(columns=config['team_schedule_rename_columns'])
+    df['goals_for'] = df.apply(lambda row: row['goals_for'].split('(')[0].strip(), axis=1)
+    df['goals_against'] = df.apply(lambda row: row['goals_against'].split('(')[0].strip(), axis=1)
+    df['attendance'] = df.attendance.str.replace(',', '')
+    df = df.replace('', None)
+    dir_path = 'data/{}/team_results'.format(info['folder'])
+    if not os.path.exists(dir_path):
+        os.makedirs(dir_path)
+    file_name = '{}_{}_results.pkl'.format(squad_id, season)
+    full_path = os.path.join(dir_path, file_name)
+    df['clean_sheet_for'] = df.goals_against.astype(int) == 0
+    df['clean_sheet_against'] = df.goals_for.astype(int) == 0
+    df['higher_xg'] = df.xg_for > df.xg_against
+    df['run_of_play'] = df.apply(lambda row: classify_xg_difference(row['xg_for'], row['xg_against']), axis=1)
+    df.to_pickle(full_path)
+    cols = get_table_columns('soccer', 'team_results')
+    missing_cols = [i for i in cols if i not in df.columns]
+    idf = df[cols]
+    upsert_data_into_db(idf, 'soccer', 'team_results')
+    return df
+
+def update_current_league_data(info_dict, config, start_date=None, end_date=None):
+    """
+    Runs a full update of a league for a given time range, defaults to the last 7 days
+
+    Args:
+        info_dict(dict): league info
+        config(dict): config file
+        start_date: beginning of date range queried/updated, will default to None and then reassigned to
+                    7 days ago
+        end_date: beginning of date range queried/updated, will default to None and then reassigned to
+                  today
+
+    Returns:
+        None
+    """
+    if not start_date:
+        start_date = date.today() - timedelta(7)
+
+    if not end_date:
+        end_date = date.today()
+    year = date.today().year
+
+    standings = scrape_standings(info_dict, year)
+    league_schedule = scrape_schedule_from_competition(info_dict, year, config)
+
+    league_schedule['match_date'] = pd.to_datetime(league_schedule.match_date).dt.date
+    mask = (league_schedule.match_date >= start_date) & (league_schedule.match_date <= end_date)
+
+    scrape_matches = league_schedule[mask].reset_index(drop=True)
+
+    scrape_multiple_match_reports_from_schedule(scrape_matches, info_dict, config)

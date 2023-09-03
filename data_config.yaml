@@ -819,3 +819,14 @@ shot_creation_rename_columns:
   player: shot_player
   player_link: shot_player_link
   'body part': body_part
+team_schedule_rename_columns:
+  date: match_date
+  time: match_time
+  comp: competition
+  gf: goals_for
+  ga: goals_against
+  xg: xg_for
+  xga: xg_against
+  poss: possession
+  result: match_result
+  venue: home_or_away
